@@ -70,7 +70,6 @@ struct stateStruct {
 	WBStruct    WB;
 };
 
-
 class RF
 {
 public:
@@ -82,7 +81,6 @@ public:
 	/// for test purpose
 	///Registers[3] = bitset<64>("01010001000011110101000100001111");
 	///Registers[4] = bitset<64>("10100000111111111111111111110001");
-/*
 	Registers[1] = bitset<64>(15);
 	Registers[2] = bitset<64>(17);
 	Registers[3] = bitset<64>(13);
@@ -90,9 +88,7 @@ public:
 	Registers[6] = bitset<64>(6);
 	Registers[15] = bitset<64>(15);
 	Registers[4] = bitset<64>(20);
-*/
-
-	Registers[20] = bitset<64>(20);
+	///Registers[20] = bitset<64>(20);
     }
 
     void ReadWrite(bitset<5> RdReg1, bitset<5> RdReg2, bitset<5> WrtReg, bitset<64> WrtData, bool WrtEnable) //WrtEnable 0 is read else is read and write 
@@ -425,38 +421,6 @@ int main()
 
 	while (1) {
 
-		cout << ".................................................." << endl;
-#ifdef FORWARD_UNIT_SUPPORT
-		/* --------------------- forward check ----------------- */
-		/*
-			EX/MEM.Rd == ID/EX.Rs1
-			EX/MEM.Rd == ID/EX.Rs2
-			MEM/WB.Rd == ID/EX.Rs1
-			MEM/WB.Rd == ID/EX.Rs2
-			ForwardA(B) 00 oprand1(2) <- readdata1(2)
-			ForwardA(B) 10 oprand1(2) <- prior ALU result
-			ForwardA(B) 01 oprand1(2) <- data mem(or an earlier ALU result)
-		*/
-		ForwardA = ForwardB = bitset<2>("00");
-		if (state.MEM.wrt_enable && (state.MEM.Wrt_reg_addr != bitset<5>(0))) {
-			if (state.EX.Rs1 == state.MEM.Wrt_reg_addr)
-				ForwardA = bitset<2>("10");
-			if ((state.EX.is_I_type == false) && (state.EX.Rs2 == state.MEM.Wrt_reg_addr))
-				ForwardB = bitset<2>("10");
-		}
-		if (state.WB.wrt_enable && (state.WB.Wrt_reg_addr != bitset<5>(0))) {
-			if ((state.EX.Rs1 == state.WB.Wrt_reg_addr) &&
-					(state.EX.Rs1 != state.MEM.Wrt_reg_addr)) {
-				ForwardA = bitset<2>("01");
-			}
-			if ((state.EX.is_I_type == false) && (state.EX.Rs2 == state.WB.Wrt_reg_addr) &&
-					(state.EX.Rs2 != state.MEM.Wrt_reg_addr)) {
-				ForwardB = bitset<2>("01");
-			}
-		}
-#endif
-
-
 		/* --------------------- WB stage --------------------- */
 		// 5. Register File Update(Write Back)
 		if (state.WB.nop == false) {
@@ -480,6 +444,17 @@ int main()
 			state.WB.Wrt_reg_addr = state.MEM.Wrt_reg_addr;
 			state.WB.wrt_enable = state.MEM.wrt_enable;
 
+#ifdef FORWARD_UNIT_SUPPORT
+			/* forward unit, detection unit II */
+			if (state.WB.wrt_enable && (state.WB.Wrt_reg_addr != bitset<5>(0))) {
+				if ((state.WB.Wrt_reg_addr == state.EX.Rs1) && 
+						(state.MEM.Wrt_reg_addr != state.EX.Rs1))
+					ForwardA = bitset<2>("01");
+				if ((state.EX.is_I_type == false) && (state.WB.Wrt_reg_addr == state.EX.Rs2) &&
+						(state.MEM.Wrt_reg_addr != state.EX.Rs2))
+					ForwardB = bitset<2>("01");
+			}
+#endif
 		} else {
 			;// flush
 		}
@@ -493,23 +468,24 @@ int main()
 
 #ifdef FORWARD_UNIT_SUPPORT
 			/* Forward unit, excute */
-			alu_oprand1 = state.EX.Read_data1;
-			alu_oprand2 = (state.EX.rd_mem || state.EX.wrt_mem || state.EX.is_I_type) ?
-				state.EX.Imm : state.EX.Read_data2;
-			if (ForwardA == bitset<2>("10"))
-				alu_oprand1 = state.MEM.ALUresult;
-			if (ForwardB == bitset<2>("10"))
-				alu_oprand2 = state.MEM.ALUresult;
-			if (ForwardA == bitset<2>("01"))
-				alu_oprand1 = state.WB.Wrt_data;
-			if (ForwardB == bitset<2>("01"))
-				alu_oprand2 = state.WB.Wrt_data;
-			cout << "ForwardA: " << ForwardA << endl;
-			cout << "ForwardB: " << ForwardB << endl;
+		alu_oprand1 = state.EX.Read_data1;
+		alu_oprand2 = (state.EX.rd_mem || state.EX.wrt_mem || state.EX.is_I_type) ?
+						state.EX.Imm : state.EX.Read_data2;
+		if (ForwardA == bitset<2>("10"))
+			alu_oprand1 = state.MEM.ALUresult;
+		if (ForwardB == bitset<2>("10"))
+			alu_oprand2 = state.MEM.ALUresult;
+		if (ForwardA == bitset<2>("01"))
+			alu_oprand1 = state.WB.Wrt_data;
+		if (ForwardB == bitset<2>("01"))
+			alu_oprand2 = state.WB.Wrt_data;
+		cout << "ForwardA: " << ForwardA << endl;
+		cout << "ForwardB: " << ForwardB << endl;
+		ForwardA = ForwardB = bitset<2>("00");
 #endif
-
+		
 			state.MEM.ALUresult = myALU.ALUOperation(state.EX.alu_op, alu_oprand1, alu_oprand2);
-
+			
 
 			state.MEM.Rs1 = state.EX.Rs1;
 			state.MEM.Rs2 = state.EX.Rs2;
@@ -519,6 +495,16 @@ int main()
 			state.MEM.rd_mem = state.EX.rd_mem;
 			state.MEM.wrt_mem = state.EX.wrt_mem;
 
+
+#ifdef FORWARD_UNIT_SUPPORT
+			/* forward unit, detection unit I */
+			if (state.MEM.wrt_enable && (state.MEM.Wrt_reg_addr != bitset<5>(0))) {
+				if (state.MEM.Wrt_reg_addr == state.EX.Rs1)
+					ForwardA = bitset<2>("10");
+				if ((state.EX.is_I_type == false) && (state.MEM.Wrt_reg_addr == state.EX.Rs2))
+					ForwardB = bitset<2>("10");
+			}
+#endif
 		} else {
 			;// flush
 		}
@@ -584,7 +570,6 @@ int main()
 				cout << "2 done      " << endl;
 			} else {
 				state.IF.nop = true;
-				state.ID.nop = true;
 			}
 		} else {
 			//// flush state.EX.
@@ -604,42 +589,40 @@ int main()
 		}
 		state.ID.nop = state.IF.nop;
 
+
 		/* --------------------- Stall unit--------------------- */
 
-		/*** hazard detection unit in ID stage of ld instruction ***/
-		// ld x2, 20(x1)   IF1
-		// add x4, x2, x5  IF2
-		/* load & use case: reload IF2; adding bubble like below 
-
-		   . check timing, just before stage-register-write period in a cycle
-
-		   IF ID  EX    MEM  WB
-		      IF1 ID1.  EX1  MEM WB
-		          IF2.  o    o   o
-		                IF2  ID2 .........
-		 **************************************/
-
+			/*** hazard detection unit in ID stage of ld instruction ***/
+			// ld x2, 20(x1)   IF1
+			// add x4, x2, x5  IF2
+			/* load & use case: reload IF2; adding bubble like below 
+			
+			IF ID  EX   MEM WB
+			   IF1 ID1. EX  MEM WB
+			       IF2  O   O   O
+				        IF2 .........
+			**************************************/
 		if (state.EX.rd_mem &&
-				((state.EX.Wrt_reg_addr == bitset<5>(state.ID.Instr.to_string().substr(12, 5)))
-				 || (state.EX.Wrt_reg_addr == bitset<5>(state.ID.Instr.to_string().substr(7, 5))))) {
+			 ((state.EX.Wrt_reg_addr == bitset<5>(state.ID.Instr.to_string().substr(12, 5)))
+					|| (state.EX.Wrt_reg_addr == bitset<5>(state.ID.Instr.to_string().substr(7, 5))))) {
 			state.ID.nop = true; /// insert bubble here
 			cout << "load & use case: insert bubble here" << endl;
-			/************* beq is very like the same as load & use case
-			 * IFb means beq,  IFn means next, IFt means target
-			 * 
-			 * IF ID   EX   MEM  WB
-			 *    IFb  IDb. EX   MEM WB
-			 *         IFn  o    o   o    o
-			 *              IFt  IDt EXt MEMt WBt
-			 * IF ID1.   EX   MEM  WB
-			 *    IFb    o    o    o   o
-			 *           IFb  IDb. EX  MEM  WB 
-			 *                IFn  o   o    o  o
-			 *               
-			 *	NOTE: 
-			 *        beq is exactly branch-if-not-eq, 
-			 *		  and address extention should be 2bits in this lab.
-			 * **************************************/
+		/************* beq is very like the same as load & use case
+		 * IFb means beq,  IFn means next, IFt means target
+		 * 
+		 * IF ID   EX   MEM  WB
+		 *    IFb  IDb. EX   MEM WB
+		 *         IFn  o    o   o    o
+		 *              IFt  IDt EXt MEMt WBt
+		 * IF ID1.   EX   MEM  WB
+		 *    IFb    o    o    o   o
+		 *           IFb  IDb. EX  MEM  WB 
+		 *                IFn  o   o    o  o
+		 *               
+		 *	NOTE: 
+		 *        beq is exactly branch-if-not-eq, 
+		 *		  and address extention should be 2bits in this lab.
+		 * **************************************/
 		} else if (is_beq &&
 				(state.EX.Read_data1 != state.EX.Read_data2)) {
 			state.IF.PC = bitset<32>(state.IF.PC.to_ulong() + addressExtend.to_ulong());
@@ -650,13 +633,13 @@ int main()
 			state.IF.PC = bitset<32>(state.IF.PC.to_ulong() + 4);
 		}
 
-/* ------------------------------ end of one cycle --------------------------- */
 		printState(state, cycle); //print states after executing cycle 0, cycle 1, cycle 2 ... 
 
 		if (state.IF.nop && state.ID.nop && state.EX.nop && state.MEM.nop && state.WB.nop)
 			break;
 
-		cycle += 1;
+				cycle += 1;
+		/////state = newState; /*The end of the cycle and updates the current state with the values calculated in this cycle */
 
 	}
 

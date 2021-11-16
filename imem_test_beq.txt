@@ -1,0 +1,15 @@
+#################################################################### 
+# case for branch in lab2 
+# first, hardcode x20 to be 20, it will be in dead loop 
+# then, hardcode x20 to be 0, it will be in exit normally 
+# beq x0, x20, 0 
+# 0000000 x20 x0 000 00000 1100011 
+00000001 
+01000000 
+00000000 
+01100011 
+# end of instruction 
+11111111 
+11111111 
+11111111 
+11111111
